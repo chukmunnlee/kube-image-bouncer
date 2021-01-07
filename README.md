@@ -73,6 +73,21 @@ $ docker pull kainlite/kube-image-bouncer
 
 # Deployment of `ImagePolicyWebhook`
 
+There are two possible ways to deploy this controller (webhook), for this to work you will need to create the certificates as explained below, but first
+we need to take care of other details add this to your hosts file in the master or where the bouncer will run:
+
+We use this name because it has to match with the names from the certificate, since this will run outside kuberntes and it could even be externally available, we just fake it with a hosts entry
+```
+echo "127.0.0.1 image-bouncer-webhook.default.svc" >> /etc/hosts
+```
+
+Then (go generate the cert in the step then come back), be aware that you need to be sitting in the folder with the certs for that to work:
+```
+docker run --rm -v `pwd`/server-key.pem:/certs/server-key.pem:ro -v `pwd`/server.crt:/certs/server.crt:ro -p 1323:1323 --network host kainlite/kube-image-bouncer -k /certs/server-key.pem -c /certs/server.crt
+```
+
+If you did this method you don't need to create the `validating-webhook-configuration.yaml` resource nor apply the kubernetes deployment to run in the cluster.
+
 ## Kubernetes master node(s)
 
 Ensure the `ImagePolicyWebhook` admission controller is enabled. Refer to
@@ -108,7 +123,7 @@ kind: Config
 clusters:
 - cluster:
     certificate-authority: /etc/kubernetes/kube-image-bouncer/pki/server.crt
-    server: https://bouncer.local.lan:1323/image_policy
+    server: https://image-bouncer-webhook.default.svc:1323/image_policy
   name: bouncer_webhook
 contexts:
 - context:
