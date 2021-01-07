@@ -86,6 +86,12 @@ Then (go generate the cert in the step then come back), be aware that you need t
 docker run --rm -v `pwd`/server-key.pem:/certs/server-key.pem:ro -v `pwd`/server.crt:/certs/server.crt:ro -p 1323:1323 --network host kainlite/kube-image-bouncer -k /certs/server-key.pem -c /certs/server.crt
 ```
 
+Also in the apiserver you need to update it with these settings:
+```
+--admission-control-config-file=/etc/kubernetes/kube-image-bouncer/admission_configuration.json
+--enable-admission-plugins=ImagePolicyWebhook
+```
+
 If you did this method you don't need to create the `validating-webhook-configuration.yaml` resource nor apply the kubernetes deployment to run in the cluster.
 
 ## Kubernetes master node(s)
