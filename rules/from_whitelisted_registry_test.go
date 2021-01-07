@@ -3,7 +3,7 @@ package rules
 import (
 	"testing"
 
-	"github.com/flavio/kube-image-bouncer/rules"
+	"github.com/kainlite/kube-image-bouncer/rules"
 )
 
 func TestIsFromWhitelistedRegistry(t *testing.T) {

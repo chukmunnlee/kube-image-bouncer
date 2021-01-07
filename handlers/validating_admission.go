@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/flavio/kube-image-bouncer/rules"
+	"github.com/kainlite/kube-image-bouncer/rules"
 
 	"github.com/labstack/echo"
 	"k8s.io/api/admission/v1beta1"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -32,9 +32,10 @@ func PostValidatingAdmission() echo.HandlerFunc {
 		}
 		c.Logger().Debugf("pod: %+v", pod)
 
-		var admissionReviewResponse v1beta1.AdmissionReview
-		admissionReviewResponse.Response = new(v1beta1.AdmissionResponse)
-		admissionReviewResponse.Response.Allowed = true
+		admissionReview.Response = &v1beta1.AdmissionResponse{
+			Allowed: true,
+			UID:     admissionReview.Request.UID,
+		}
 		images := []string{}
 
 		for _, container := range pod.Spec.Containers {
@@ -45,8 +46,8 @@ func PostValidatingAdmission() echo.HandlerFunc {
 				return c.JSON(http.StatusInternalServerError, "error while parsing image name")
 			}
 			if usingLatest {
-				admissionReviewResponse.Response.Allowed = false
-				admissionReviewResponse.Response.Result = &metav1.Status{
+				admissionReview.Response.Allowed = false
+				admissionReview.Response.Result = &metav1.Status{
 					Message: "Images using latest tag are not allowed",
 				}
 				break
@@ -63,8 +64,8 @@ func PostValidatingAdmission() echo.HandlerFunc {
 						"error while looking for image registry")
 				}
 				if !validRegistry {
-					admissionReviewResponse.Response.Allowed = false
-					admissionReviewResponse.Response.Result = &metav1.Status{
+					admissionReview.Response.Allowed = false
+					admissionReview.Response.Result = &metav1.Status{
 						Message: "Images from a non whitelisted registry",
 					}
 					break
@@ -72,14 +73,14 @@ func PostValidatingAdmission() echo.HandlerFunc {
 			}
 		}
 
-		if admissionReviewResponse.Response.Allowed {
+		if admissionReview.Response.Allowed {
 			c.Logger().Debugf("All images accepted: %v", images)
 		} else {
 			c.Logger().Infof("Rejected images: %v", images)
 		}
 
-		c.Logger().Debugf("admission response: %+v", admissionReviewResponse)
+		c.Logger().Debugf("admission response: %+v", admissionReview.Response)
 
-		return c.JSON(http.StatusOK, admissionReviewResponse)
+		return c.JSON(http.StatusOK, admissionReview)
 	}
 }

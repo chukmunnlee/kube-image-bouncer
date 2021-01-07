@@ -10,7 +10,7 @@ import (
 	"github.com/labstack/gommon/log"
 	"gopkg.in/urfave/cli.v1"
 
-	"github.com/flavio/kube-image-bouncer/handlers"
+	"github.com/kainlite/kube-image-bouncer/handlers"
 )
 
 func main() {

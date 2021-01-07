@@ -13,11 +13,14 @@ spec:
   selector:
     app: image-bouncer-webhook
 ---
-apiVersion: apps/v1beta1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: image-bouncer-webhook
 spec:
+  selector:
+    matchLabels:
+      app: image-bouncer-webhook
   template:
     metadata:
       labels:
@@ -25,7 +28,8 @@ spec:
     spec:
       containers:
         - name: image-bouncer-webhook
-          image: "flavio/kube-image-bouncer:1.9"
+          imagePullPolicy: Always
+          image: "kainlite/kube-image-bouncer:latest"
           args:
             - "--cert=/etc/admission-controller/tls/tls.crt"
             - "--key=/etc/admission-controller/tls/tls.key"

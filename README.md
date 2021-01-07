@@ -1,7 +1,6 @@
 # kube-image-bouncer
 
-A simple webhook endpoint server that can be used to validate the images being
-created inside of the kubernetes cluster.
+A simple webhook endpoint server that can be used to validate the images being created inside of the kubernetes cluster (created by kubeadm and tested on version 1.20.0), see the original repo: [kube-image-bouncer](https://github.com/flavio/kube-image-bouncer) for a vanilla implementation.
 
 It works with two different types of [Kubernetes admission controller](https://kubernetes.io/docs/admin/admission-controllers/):
 
@@ -9,34 +8,16 @@ It works with two different types of [Kubernetes admission controller](https://k
   * [GenericAdmissionWebhook](https://v1-8.docs.kubernetes.io/docs/admin/admission-controllers/#genericadmissionwebhook-alpha) (which starting from Kubernetes 1.9 has been renamed
 [ValidatingAdmissionWebhook](https://kubernetes.io/docs/admin/admission-controllers/#validatingadmissionwebhook-alpha-in-18-beta-in-19).
 
-This admission controller will reject all the pods that are using images with
-the `latest` tag.
+This admission controller will reject all the pods that are using images with the `latest` tag.
 
 ## Disclaimer
 
 I personally find the documentation of these admission controllers vague,
 confusing and missing some details.
 
-I found the documentation about `GenericAdmissionWebhook` and
-`ValidatingAdmissionWebhook` more troublesome to understand compared to the
-one of `ImagePolicyWebhook`. You have to combine the 1.9 documentation of
-`ValidatingAdmissionWebhook` together with the 1.8 documentation of
-`GenericAdmissionWebhook`. The latter one references the
-[Dynamic Admission Control](https://v1-8.docs.kubernetes.io/docs/admin/extensible-admission-controllers/)
+In this example I had to adapt things to use the ValidatingWebhookConfiguration from the latest version:
+[Dynamic Admission Control](https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#configure-admission-webhooks-on-the-fly)
 which has more details.
-
-This document will try to shed some light about these admission controllers,
-especially about how to deploy them.
-
-I promise I'll try to improve upstream documentation as well :)
-
-**Note well:** during the 1.8 -> 1.9 transition, in addition to being renamed,
-the `GenericAdmissionWebhook` has also been promoted from being an `alpha1`
-resource to be a `beta1` one. That caused some changes in terms of the request
-format sent from the API server to the webhook endpoint and in terms of
-expected response.
-
-Right now this document (and the code) focuses on version 1.9.
 
 # Comparison
 
@@ -51,13 +32,12 @@ Good things about `ImagePolicyWebhook`:
 Bad things about `ImagePolicyWebhook`:
 
   * More configuration files are expected on the API server node(s) compared to
-    `GenericAdmissionWebhook`.
+    `ValidatingWebhookConfiguration`.
   * It's a bit tricky to deploy the service providing the webhook endpoint on the
     kubernetes cluster (more on that later).
 
 
-The [GenericAdmissionWebhook](https://v1-8.docs.kubernetes.io/docs/admin/admission-controllers/#genericadmissionwebhook-alpha) (which starting from Kubernetes 1.9 has been renamed
-[ValidatingAdmissionWebhook](https://kubernetes.io/docs/admin/admission-controllers/#validatingadmissionwebhook-alpha-in-18-beta-in-19)
+[ValidatingAdmissionWebhook](https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers)
 can evaluate all kind of resources.
 
 Good things about `ValidatingAdmissionWebhook`:
@@ -79,37 +59,19 @@ Bad things about `ValidatingAdmissionWebhook`:
 To build the project just do:
 
 ```
-$ go get github.com/flavio/kube-image-bouncer
+$ go get github.com/kainlite/kube-image-bouncer
 ```
 
 The project dependencies are tracked inside of this repository and are managed
 using [dep](https://github.com/golang/dep).
 
-This application is distributed also as a [Docker image](https://hub.docker.com/r/flavio/kube-image-bouncer/):
+This application is distributed also as a [Docker image](https://hub.docker.com/r/kainlite/kube-image-bouncer/):
 
 ```
-$ docker pull flavio/kube-image-bouncer
+$ docker pull kainlite/kube-image-bouncer
 ```
 
 # Deployment of `ImagePolicyWebhook`
-
-The webhook endpoint must be secured by tls to be used by kubernetes. This
-certificate can also be a self-signed one.
-
-Create a server key and certificate with the following command:
-
-```
-$ openssl req  -nodes -new -x509 -keyout webhook-key.pem -out webhook.pem
-```
-
-The API server uses a certificate to prove its identity. This
-certificate can also be a self-signed one.
-
-Create a server key and certificate with the following command:
-
-```
-$ openssl req  -nodes -new -x509 -keyout apiserver-client-key.pem -out apiserver-client.pem
-```
 
 ## Kubernetes master node(s)
 
@@ -124,7 +86,7 @@ contents:
 ```json
 {
   "imagePolicy": {
-     "kubeConfigFile": "/etc/kubernetes/kube-image-bouncer.yml",
+     "kubeConfigFile": "/etc/kubernetes/kube-image-bouncer/kube-image-bouncer.yml",
      "allowTTL": 50,
      "denyTTL": 50,
      "retryBackoff": 500,
@@ -137,7 +99,7 @@ contents:
 if the server referenced by the webhook configuration is not reachable
 (see the `defaultAllow: false` directive).
 
-Create a kubeconfig file `/etc/kubernetes/kube-image-bouncer.yml` with the
+Create a kubeconfig file `/etc/kubernetes/kube-image-bouncer/kube-image-bouncer.yml` with the
 following contents:
 
 ```yaml
@@ -145,7 +107,7 @@ apiVersion: v1
 kind: Config
 clusters:
 - cluster:
-    certificate-authority: /etc/kubernetes/kube-image-bouncer/webhook.pem
+    certificate-authority: /etc/kubernetes/kube-image-bouncer/pki/server.crt
     server: https://bouncer.local.lan:1323/image_policy
   name: bouncer_webhook
 contexts:
@@ -158,79 +120,103 @@ preferences: {}
 users:
 - name: api-server
   user:
-    client-certificate: /etc/kubernetes/kube-image-bouncer/apiserver-client.pem
-    client-key:  /etc/kubernetes/kube-image-bouncer/apiserver-client-key.pem
+    client-certificate: /etc/kubernetes/pki/apiserver.crt
+    client-key:  /etc/kubernetes/pki/apiserver.key
 ```
 
 This configuration file instructs the API server to reach the webhook server
 at `https://bouncer.local.lan:1323` and use its `/image_policy` endpoint.
 
-Note that the certificates and keys we previously generated have been copied
-under `/etc/kubernetes/kube-image-bouncer`.
-
-## Node running the webhook endpoint
-
-Copy the `webhook.pem` and `webhook-key.pem` files to node running the webhook
-service.
-
-Start the webhook by doing:
-
-```
-$ kube-image-bouncer --cert webhook.pem --key webhook-key.pem
-```
-
-When using the [Docker image](https://hub.docker.com/r/flavio/kube-image-bouncer/):
-
-```
-$ docker run --rm -v `pwd`/webhook-key.pem:/certs/webhook-key.pem:ro -v `pwd`/webhook.pem:/certs/webhook.pem:ro -p 1323:1323 flavio/kube-image-bouncer -k /certs/webhook-key.pem -c /certs/webhook.pem
-```
-
-This will start a container with the server key and certificate mounted read-only
-inside of it.
-
-If you want to perform tls termination outside of this application, just start
-it without providing a key and a certificate.
+We're reusing the certificates from the apiserver and the one for kube-image-bouncer we will generate in the next step.
 
 # Deployment of `ValidatingAdmissionWebhook`
 
-The webhook endpoint must be secured by tls to be used by kubernetes. This
-certificate can also be a self-signed one.
+If you are using kubeadm you can rely on the CA already created for you like this:
 
-Create a server key and certificate with the following command:
-
+Create a CSR:
 ```
-$ openssl req  -nodes -new -x509 -keyout webhook-key.pem -out webhook.pem
+cat <<EOF | cfssl genkey - | cfssljson -bare server
+{
+  "hosts": [
+    "image-bouncer-webhook.default.svc",
+    "image-bouncer-webhook.default.svc.cluster.local",
+    "image-bouncer-webhook.default.pod.cluster.local",
+    "192.0.2.24",
+    "10.0.34.2"
+  ],
+  "CN": "system:node:image-bouncer-webhook.default.pod.cluster.local",
+  "key": {
+    "algo": "ecdsa",
+    "size": 256
+  },
+  "names": [
+    {
+      "O": "system:nodes"
+    }
+  ]
+}
+EOF
 ```
 
-The API server uses a certificate to prove its identity. This
-certificate can also be a self-signed one.
-
-Create a server key and certificate with the following command:
-
+Then apply it to the cluster
 ```
-$ openssl req  -nodes -new -x509 -keyout apiserver-clientkey.pem -out apiserver-client.pem
+cat <<EOF | kubectl apply -f -
+apiVersion: certificates.k8s.io/v1
+kind: CertificateSigningRequest
+metadata:
+  name: image-bouncer-webhook.default
+spec:
+  request: $(cat server.csr | base64 | tr -d '\n')
+  signerName: kubernetes.io/kubelet-serving
+  usages:
+  - digital signature
+  - key encipherment
+  - server auth
+EOF
 ```
 
-## Kubernetes master node(s)
-
-Ensure the `GenericAdmissionWebhook` admission controller is enabled:
-the `--admission-control` flag must mention it.
-
-Ensure the API server is started with the following flags:
+Approve and get your certificate ready to use
 ```
---proxy-client-cert-file=/etc/kubernetes/apiserver-client.pem \
---proxy-client-key-file=/etc/kubernetes/apiserver-client-key.pem"
+kubectl get csr image-bouncer-webhook.default -o jsonpath='{.status.certificate}' | base64 --decode > server.crt
 ```
+
+You can also generate the `validating-webhook-configuration.yaml` file, like this:
+```
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: image-bouncer-webook
+webhooks:
+  - name: image-bouncer-webhook.default.svc
+    rules:
+      - apiGroups:
+          - ""
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+        resources:
+          - pods
+    failurePolicy: Ignore
+    sideEffects: None
+    admissionReviewVersions: ["v1", "v1beta1"]
+    clientConfig:
+      caBundle: $(kubectl get csr image-bouncer-webhook.default -o jsonpath='{.status.certificate}')
+      service:
+        name: image-bouncer-webhook
+        namespace: default
+```
+This could be easily automated, but since this is an example that should be enough to make it work.
 
 ## Define Kubernetes objects
 
 First of all you have to create a tls secret holding the webhook certificate
-and key:
+and key (we just generated this in the previous step):
 
 ```
 kubectl create secret tls tls-image-bouncer-webhook \
-  --key webhook-key.pem \
-  --cert webhook.pem
+  --key server-key.pem \
+  --cert server.pem
 ```
 
 Then create a kubernetes deployment for the `image-bouncer-webhook`:
@@ -246,9 +232,9 @@ our webhook endpoint:
 kubectl apply -f kubernetes/validating-webhook-configuration.yaml
 ```
 
-**Note well:** the `ExternalAdmissionHookConfiguration` resource defined inside of
+**Note well:** the `ValidatingWebhookConfiguration` resource defined inside of
 `validating-webhook-configuration.yaml` includes a CA certificate. This
-is the `apiserver-client.pem` converted to base64.
+is the `server.crt` converted to base64.
 
 As reported by the upstream docs:
 
