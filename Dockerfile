@@ -6,6 +6,9 @@ RUN go build
 
 
 FROM alpine:3.15
+
+LABEL org.opencontainers.image.source https://github.com/chukmunnlee/kube-image-bouncer
+
 WORKDIR /app
 RUN adduser -h /app -D web
 COPY --from=0 /go/src/github.com/kainlite/kube-image-bouncer/kube-image-bouncer /app/
